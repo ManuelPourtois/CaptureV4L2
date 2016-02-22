@@ -31,6 +31,10 @@ int main(void){
         exit(1);
     }
 
+
+
+    //  salut
+    //
     if(!(capabilities.capabilities & V4L2_CAP_VIDEO_CAPTURE)){
         fprintf(stderr, "The device does not handle single-planar video capture.\n");
         exit(1);
