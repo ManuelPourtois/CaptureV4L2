@@ -18,6 +18,8 @@
 #include <sys/ioctl.h>
 
 #include <linux/videodev2.h>
+#include <SDL/SDL.h>
+#include <SDL/SDL_image.h>
 
 int main(void){
     int fd;
@@ -43,8 +45,8 @@ int main(void){
     struct v4l2_format format;
     format.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     format.fmt.pix.pixelformat = V4L2_PIX_FMT_MJPEG;
-    format.fmt.pix.width = 800;
-    format.fmt.pix.height = 600;
+    format.fmt.pix.width = 1920;
+    format.fmt.pix.height = 1080;
 
     if(ioctl(fd, VIDIOC_S_FMT, &format) < 0){
         perror("VIDIOC_S_FMT");
@@ -82,14 +84,87 @@ int main(void){
             bufferinfo.m.offset
     );
 
+    printf("Mapped size %d\n",bufferinfo.length );
+
+
     if(buffer_start == MAP_FAILED){
         perror("mmap");
         exit(1);
     }
 
     memset(buffer_start, 0, bufferinfo.length);
-    // ...
+    //struct v4l2_buffer bufferinfo;
+    memset(&bufferinfo, 0, sizeof(bufferinfo));
 
+    bufferinfo.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    bufferinfo.memory = V4L2_MEMORY_MMAP;
+    bufferinfo.index = 0; /* Queueing buffer index 0. */
+
+// Activate streaming
+    int type = bufferinfo.type;
+    if(ioctl(fd, VIDIOC_STREAMON, &type) < 0){
+        perror("VIDIOC_STREAMON");
+        exit(1);
+    }
+    int i ;
+for( i= 0;i<10;i++) {
+/* Here is where you typically start two loops:
+ * - One which runs for as long as you want to
+ *   capture frames (shoot the video).
+ * - One which iterates over your buffers everytime. */
+
+// Put the buffer in the incoming queue.
+    if (ioctl(fd, VIDIOC_QBUF, &bufferinfo) < 0) {
+        perror("VIDIOC_QBUF");
+        exit(1);
+    }
+
+// The buffer's waiting in the outgoing queue.
+    if (ioctl(fd, VIDIOC_DQBUF, &bufferinfo) < 0) {
+        perror("VIDIOC_QBUF");
+        exit(1);
+    }
+
+    printf("Dequeue %d\n", bufferinfo.bytesused);
+
+/* Your loops end here. */
+}
+// Deactivate streaming
+    if(ioctl(fd, VIDIOC_STREAMOFF, &type) < 0){
+        perror("VIDIOC_STREAMOFF");
+        exit(1);
+    }
+
+    SDL_Init(SDL_INIT_VIDEO);
+    IMG_Init(IMG_INIT_JPG);
+
+// Get the screen's surface.
+    SDL_Surface* screen = SDL_SetVideoMode(
+            format.fmt.pix.width,
+            format.fmt.pix.height,
+            32, SDL_HWSURFACE
+    );
+
+    SDL_RWops* buffer_stream;
+    SDL_Surface* frame;
+    SDL_Rect position = {.x = 0, .y = 0};
+
+// Create a stream based on our buffer.
+    buffer_stream = SDL_RWFromMem(buffer_start, bufferinfo.length);
+
+// Create a surface using the data coming out of the above stream.
+    SDL_Surface *picture = IMG_Load_RW(buffer_stream,1);
+
+// Blit the surface and flip the screen.
+    SDL_BlitSurface(picture, NULL, screen, &position);
+    SDL_Flip(screen);
+read(0,NULL,3);
+// Free everything, and unload SDL & Co.
+    SDL_FreeSurface(picture);
+    SDL_RWclose(buffer_stream);
+    IMG_Quit();
+    SDL_Quit();
+    printf("Hourra!!");
     close(fd);
     return EXIT_SUCCESS;
 }
