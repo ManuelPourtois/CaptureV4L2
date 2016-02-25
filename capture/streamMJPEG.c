@@ -21,23 +21,29 @@
 #include <SDL/SDL.h>
 #include <SDL/SDL_image.h>
 
-int main(void){
+int main(void) {
     int fd;
-    if((fd = open("/dev/video0", O_RDWR)) < 0){
+    if ((fd = open("/dev/video0", O_RDWR)) < 0) {
         perror("open");
         exit(1);
     }
     struct v4l2_capability capabilities;
-    if(ioctl(fd, VIDIOC_QUERYCAP, &capabilities) < 0){
+    if (ioctl(fd, VIDIOC_QUERYCAP, &capabilities) < 0) {
         perror("VIDIOC_QUERYCAP");
         exit(1);
     }
 
+    struct timeval tv;
+    gettimeofday(&tv,NULL);
 
+
+    long sec = tv.tv_sec;
+
+    long micro = tv.tv_usec;
 
     //  salut
     //
-    if(!(capabilities.capabilities & V4L2_CAP_VIDEO_CAPTURE)){
+    if (!(capabilities.capabilities & V4L2_CAP_VIDEO_CAPTURE)) {
         fprintf(stderr, "The device does not handle single-planar video capture.\n");
         exit(1);
     }
@@ -48,7 +54,7 @@ int main(void){
     format.fmt.pix.width = 1920;
     format.fmt.pix.height = 1080;
 
-    if(ioctl(fd, VIDIOC_S_FMT, &format) < 0){
+    if (ioctl(fd, VIDIOC_S_FMT, &format) < 0) {
         perror("VIDIOC_S_FMT");
         exit(1);
     }
@@ -58,7 +64,7 @@ int main(void){
     bufrequest.memory = V4L2_MEMORY_MMAP;
     bufrequest.count = 1;
 
-    if(ioctl(fd, VIDIOC_REQBUFS, &bufrequest) < 0){
+    if (ioctl(fd, VIDIOC_REQBUFS, &bufrequest) < 0) {
         perror("VIDIOC_REQBUFS");
         exit(1);
     }
@@ -70,12 +76,12 @@ int main(void){
     bufferinfo.memory = V4L2_MEMORY_MMAP;
     bufferinfo.index = 0;
 
-    if(ioctl(fd, VIDIOC_QUERYBUF, &bufferinfo) < 0){
+    if (ioctl(fd, VIDIOC_QUERYBUF, &bufferinfo) < 0) {
         perror("VIDIOC_QUERYBUF");
         exit(1);
     }
 
-    char* buffer_start = mmap(
+    char *buffer_start = mmap(
             NULL,
             bufferinfo.length,
             PROT_READ | PROT_WRITE,
@@ -84,10 +90,10 @@ int main(void){
             bufferinfo.m.offset
     );
 
-    printf("Mapped size %d\n",bufferinfo.length );
+    printf("Mapped size %d\n", bufferinfo.length);
 
 
-    if(buffer_start == MAP_FAILED){
+    if (buffer_start == MAP_FAILED) {
         perror("mmap");
         exit(1);
     }
@@ -102,66 +108,92 @@ int main(void){
 
 // Activate streaming
     int type = bufferinfo.type;
-    if(ioctl(fd, VIDIOC_STREAMON, &type) < 0){
+    if (ioctl(fd, VIDIOC_STREAMON, &type) < 0) {
         perror("VIDIOC_STREAMON");
-        exit(1);
-    }
-    int i ;
-for( i= 0;i<10;i++) {
-/* Here is where you typically start two loops:
- * - One which runs for as long as you want to
- *   capture frames (shoot the video).
- * - One which iterates over your buffers everytime. */
-
-// Put the buffer in the incoming queue.
-    if (ioctl(fd, VIDIOC_QBUF, &bufferinfo) < 0) {
-        perror("VIDIOC_QBUF");
-        exit(1);
-    }
-
-// The buffer's waiting in the outgoing queue.
-    if (ioctl(fd, VIDIOC_DQBUF, &bufferinfo) < 0) {
-        perror("VIDIOC_QBUF");
-        exit(1);
-    }
-
-    printf("Dequeue %d\n", bufferinfo.bytesused);
-
-/* Your loops end here. */
-}
-// Deactivate streaming
-    if(ioctl(fd, VIDIOC_STREAMOFF, &type) < 0){
-        perror("VIDIOC_STREAMOFF");
         exit(1);
     }
 
     SDL_Init(SDL_INIT_VIDEO);
     IMG_Init(IMG_INIT_JPG);
 
-// Get the screen's surface.
-    SDL_Surface* screen = SDL_SetVideoMode(
+    // Get the screen's surface.
+    SDL_Surface *screen = SDL_SetVideoMode(
             format.fmt.pix.width,
             format.fmt.pix.height,
             32, SDL_HWSURFACE
     );
 
-    SDL_RWops* buffer_stream;
-    SDL_Surface* frame;
     SDL_Rect position = {.x = 0, .y = 0};
 
+
+    int i;
+    for (i = 0; i < 300; i++) {
+/* Here is where you typically start two loops:
+ * - One which runs for as long as you want to
+ *   capture frames (shoot the video).
+ * - One which iterates over your buffers everytime. */
+
+
+        gettimeofday(&tv,NULL);
+
+
+        long newMicro = (tv.tv_sec - sec)*1000000+tv.tv_usec;
+
+
+        printf("Elapsed %ld\n",(newMicro - micro));
+        micro = newMicro;
+
+// Put the buffer in the incoming queue.
+        if (ioctl(fd, VIDIOC_QBUF, &bufferinfo) < 0) {
+            perror("VIDIOC_QBUF");
+            exit(1);
+        }
+
+// The buffer's waiting in the outgoing queue.
+        if (ioctl(fd, VIDIOC_DQBUF, &bufferinfo) < 0) {
+            perror("VIDIOC_QBUF");
+            exit(1);
+        }
+
+        //printf("Dequeue %d\n", bufferinfo.bytesused);
+
+/* Your loops end here. */
+
+
+
 // Create a stream based on our buffer.
-    buffer_stream = SDL_RWFromMem(buffer_start, bufferinfo.length);
+        SDL_RWops *buffer_stream = SDL_RWFromMem(buffer_start, bufferinfo.bytesused);
+
+       // printf("FromMem\n");
 
 // Create a surface using the data coming out of the above stream.
-    SDL_Surface *picture = IMG_Load_RW(buffer_stream,1);
+        SDL_Surface *picture = IMG_Load_RW(buffer_stream, 1);
+      //  printf("Load\n");
 
 // Blit the surface and flip the screen.
-    SDL_BlitSurface(picture, NULL, screen, &position);
-    SDL_Flip(screen);
-read(0,NULL,3);
+        SDL_BlitSurface(picture, NULL, screen, &position);
+       // printf("Blit\n");
+
+        SDL_FreeSurface(picture);
+       // printf("Free\n");
+
+
+        SDL_Flip(screen);
+       // printf("Flip\n");
+
 // Free everything, and unload SDL & Co.
-    SDL_FreeSurface(picture);
-    SDL_RWclose(buffer_stream);
+     //   SDL_RWclose(buffer_stream);
+      //  printf("Close\n");
+
+
+    }
+// Deactivate streaming
+    if (ioctl(fd, VIDIOC_STREAMOFF, &type) < 0) {
+        perror("VIDIOC_STREAMOFF");
+        exit(1);
+    }
+
+
     IMG_Quit();
     SDL_Quit();
     printf("Hourra!!");
